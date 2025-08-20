@@ -1,5 +1,6 @@
 const Media = require('../models/media');
 const MediaView = require('../models/mediaView');
+const redisClient = require('../config/redis');
 
 class MediaController {
     async addMedia(req, res) {
@@ -44,6 +45,14 @@ class MediaController {
     async getAnalytics(req, res) {
         try {
             const mediaId = req.params.id;
+            const cacheKey = `media:${mediaId}:analytics`;
+
+            // Try to get from cache first
+            const cached = await redisClient.get(cacheKey);
+            if (cached) {
+                return res.json(JSON.parse(cached));
+            }
+
             const media = await Media.findById(mediaId);
             if (!media) {
                 return res.status(404).json({ message: 'Media not found' });
@@ -60,7 +69,11 @@ class MediaController {
                 views_per_day[day] = (views_per_day[day] || 0) + 1;
             });
 
-            res.json({ total_views, unique_ips, views_per_day });
+            const analytics = { total_views, unique_ips, views_per_day };
+            // Cache for 60 seconds
+            await redisClient.setEx(cacheKey, 60, JSON.stringify(analytics));
+
+            res.json(analytics);
         } catch (error) {
             res.status(500).json({ message: 'Error fetching analytics', error });
         }
