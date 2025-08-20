@@ -1,3 +1,6 @@
+const Media = require('../models/media');
+const MediaView = require('../models/mediaView');
+
 class MediaController {
     async addMedia(req, res) {
         try {
@@ -18,6 +21,50 @@ class MediaController {
             res.status(500).json({ message: 'Error generating stream URL', error });
         }
     }
+
+    // POST /media/:id/view
+    async logView(req, res) {
+        try {
+            const mediaId = req.params.id;
+            const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+            const media = await Media.findById(mediaId);
+            if (!media) {
+                return res.status(404).json({ message: 'Media not found' });
+            }
+
+            await MediaView.create({ media: mediaId, ip });
+            res.status(201).json({ message: 'View logged' });
+        } catch (error) {
+            res.status(500).json({ message: 'Error logging view', error });
+        }
+    }
+
+    // GET /media/:id/analytics
+    async getAnalytics(req, res) {
+        try {
+            const mediaId = req.params.id;
+            const media = await Media.findById(mediaId);
+            if (!media) {
+                return res.status(404).json({ message: 'Media not found' });
+            }
+
+            const views = await MediaView.find({ media: mediaId });
+            const total_views = views.length;
+            const unique_ips = new Set(views.map(v => v.ip)).size;
+
+            // Aggregate views per day
+            const views_per_day = {};
+            views.forEach(v => {
+                const day = v.viewedAt.toISOString().slice(0, 10);
+                views_per_day[day] = (views_per_day[day] || 0) + 1;
+            });
+
+            res.json({ total_views, unique_ips, views_per_day });
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching analytics', error });
+        }
+    }
 }
 
-export default new MediaController();
+module.exports = MediaController;
